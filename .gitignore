@@ -1,0 +1,8 @@
+.vs
+*.log
+*.VC.db
+*.VC.opendb
+ipch/
+*.user
+
+build/
