@@ -46,6 +46,7 @@ else()
   if(DEFINED CMAKE_CXX_EXTENSIONS AND NOT CMAKE_CXX_EXTENSIONS)
     message(SEND_ERROR "Cap'n Proto requires compiler-specific extensions (e.g., -std=gnu++11). Please leave CMAKE_CXX_EXTENSIONS undefined or ON.")
   endif()
+  set (CMAKE_CXX_STANDARD 11)
 
   if (NOT ANDROID)
     add_compile_options(-pthread)
@@ -124,16 +125,16 @@ endfunction()
 
 # Target =======================================================================
 
-serch_target_files(libluanproto)
+serch_target_files(luanproto)
 add_library(${target} SHARED ${target_files})
-set_target_properties(${target} PROPERTIES COMPILE_DEFINITIONS "LIBBATTLE_EXPORTS")
-target_link_libraries(${target} ${CAPNP_LIBRARIES})
+set_target_properties(${target} PROPERTIES COMPILE_DEFINITIONS "LIBLUANP_EXPORTS")
+target_link_libraries(${target} ${CAPNP_LIBRARIES} ${CAPNP_LIB_CAPNPC})
 install(TARGETS ${target} ${INSTALL_TARGETS_DEFAULT_ARGS})
 
 serch_target_files("tester")
 add_executable(${target} WIN32 ${target_files})
-add_dependencies(${target} libluanproto)
-target_link_libraries(${target} libluanproto)
+add_dependencies(${target} luanproto)
+target_link_libraries(${target} luanproto)
 target_include_directories(${target} PRIVATE ${libBattle_srcdir})
 install(TARGETS ${target} ${INSTALL_TARGETS_DEFAULT_ARGS})
 

@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <io.h>
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
@@ -25,7 +24,7 @@
 #include <functional>
 #include <iostream>
 
-#include <lua.hpp>
+#include <lua/lua.hpp>
 
 #ifdef _MSC_VER
 #define KJ_STD_COMPAT
@@ -38,6 +37,8 @@
 #include <capnp/pointer-helpers.h>
 #include <capnp/dynamic.h>
 #include <capnp/schema-parser.h>
+#include <capnp/pretty-print.h>
+#include <kj/io.h>
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
