@@ -131,10 +131,4 @@ set_target_properties(${target} PROPERTIES COMPILE_DEFINITIONS "LIBLUANP_EXPORTS
 target_link_libraries(${target} ${CAPNP_LIBRARIES} ${CAPNP_LIB_CAPNPC})
 install(TARGETS ${target} ${INSTALL_TARGETS_DEFAULT_ARGS})
 
-serch_target_files("tester")
-add_executable(${target} WIN32 ${target_files})
-add_dependencies(${target} luanproto)
-target_link_libraries(${target} luanproto)
-target_include_directories(${target} PRIVATE ${libBattle_srcdir})
-install(TARGETS ${target} ${INSTALL_TARGETS_DEFAULT_ARGS})
 

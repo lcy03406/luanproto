@@ -1,7 +1,8 @@
 local np = require "luanproto"
+local inspect = require "inspect"
 
 print(np.load("AddressBook", "addressbook.capnp", "."))
-print(np.encode("AddressBook", {
+local t = {
 	people={
 		{
 			id=123,
@@ -36,6 +37,17 @@ print(np.encode("AddressBook", {
 			}
 		}
 	}
-}))
-
+}
+local str = inspect(t)
+print("\n\noriginal lua:\n")
+print(str)
+local bin = np.encode("AddressBook", t)
+local txt = np.pretty("AddressBook", bin)
+print("\n\nencoded txt:\n")
+print(txt)
+local de = np.decode("AddressBook", bin)
+local destr = inspect(t)
+print("\n\ndecoded lua:\n")
+print(destr)
+assert(str==destr, "decoded lua should equal to the original.")
 
