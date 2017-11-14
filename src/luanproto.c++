@@ -31,38 +31,9 @@
 
 using namespace capnp;
 
-capnp::SchemaParser parser;
+static capnp::SchemaParser parser;
 
-std::map<std::string, StructSchema> schemaRegistry;
-
-static int load(lua_State *L) {
-	int n = lua_gettop(L);
-	if (n < 3) {
-		lua_pushstring(L, "bad arguments, need 3: struct name, filename, import path");
-		lua_pushboolean(L, false);
-		return 2;
-	}
-	kj::StringPtr structName = luaL_checkstring(L, 1);
-	kj::StringPtr filename = luaL_checkstring(L, 2);
-	kj::StringPtr importPathName = luaL_checkstring(L, 3); //TODO multiple pathes
-	auto importPath = kj::arrayPtr(&importPathName, 1);
-	auto fileSchema = parser.parseDiskFile(filename, filename, importPath);
-	KJ_IF_MAYBE(schema, fileSchema.findNested(structName)) {
-		schemaRegistry[structName] = schema->asStruct();
-		lua_pushboolean(L, true);
-		return 1;
-	} else {
-		luaL_Buffer b;
-		luaL_buffinit(L, &b);
-		luaL_addstring(&b, "cannot find struct (");
-		luaL_addstring(&b, structName.cStr());
-		luaL_addstring(&b, ") in file: ");
-		luaL_addstring(&b, filename.cStr());
-		luaL_pushresult(&b);
-		lua_pushboolean(L, false);
-		return 2;
-	}
-}
+static std::map<std::string, InterfaceSchema> interfaceSchemaRegistry;
 
 static Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type);
 static Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema);
@@ -286,63 +257,100 @@ static int convertFromStruct(lua_State *L, DynamicStruct::Reader value) {
 }
 
 
-static int encode (lua_State *L) {
-	const char* structName = luaL_checkstring(L, 1);
-	const auto it = schemaRegistry.find(structName);
-	if (it == schemaRegistry.end())
-		return 0;
-	const auto& structSchema = it->second;
-	//TODO(optimize): use luaL_Buffer to avoid copy?
-	MallocMessageBuilder message;
-	message.adoptRoot(convertToStruct(L, 2, message, structSchema));
-	auto words = messageToFlatArray(message);
-	auto array = words.asBytes();
-	lua_pushlstring(L, (const char*)array.begin(), array.size());
-	return 1;
+template<typename Func>
+static int TryCatch(lua_State *L, Func&& func)
+{
+	int ret = 0;
+	KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
+		ret = func();
+	})) {
+		auto desc = e->getDescription();
+		lua_pushlstring(L, desc.cStr(), desc.size());
+		return lua_error(L);
+	}
+	return ret;
 }
 
-static int decode(lua_State *L) {
-	const char* structName = luaL_checkstring(L, 1);
-	const auto it = schemaRegistry.find(structName);
-	if (it == schemaRegistry.end())
-		return 0;
-	const auto& structSchema = it->second;
-	size_t len = 0;
-	const char* bytes = luaL_checklstring(L, 2, &len);
-	//TODO what if bytes are not alined?
-	auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
-	FlatArrayMessageReader message(words);
-	return convertFromStruct(L, message.getRoot<DynamicStruct>(structSchema));
+//interface, method, side => schema
+static const StructSchema luaFindSchema(lua_State *L) {
+	void* lface = lua_touserdata(L, 1); //TODO error handling
+	const char* lmethod = nullptr;
+	int lidx = 0;
+	if (lua_isinteger(L, 2)) {
+		lidx = lua_tointeger(L, 2);
+	} else {
+		lmethod = luaL_checkstring(L, 2);
+	}
+	int lside = luaL_checkinteger(L, 3);
+	const InterfaceSchema* face = (InterfaceSchema*)lface;
+	const auto method = (lmethod == nullptr) ? face->getMethods()[lidx] : face->getMethodByName(lmethod);
+	return lside == 0 ? method.getParamType() : method.getResultType();	
 }
 
-static int pretty(lua_State *L) {
-	const char* structName = luaL_checkstring(L, 1);
-	const auto it = schemaRegistry.find(structName);
-	if (it == schemaRegistry.end())
-		return 0;
-	const auto& structSchema = it->second;
-	size_t len = 0;
-	const char* bytes = luaL_checklstring(L, 2, &len);
-	//TODO what if bytes are not alined?
-	auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
-	FlatArrayMessageReader message(words);
-	auto text = kj::str(prettyPrint(message.getRoot<DynamicStruct>(structSchema)));
-	lua_pushlstring(L, text.cStr(), text.size());
-	return 1;
+
+static int lparse(lua_State *L) {
+	const char* name = luaL_checkstring(L, 1); //TODO multiple structs
+	const char* filename = luaL_checkstring(L, 2);
+	const char* import = luaL_checkstring(L, 3); //TODO multiple pathes
+	return TryCatch(L, [=]() {
+		kj::StringPtr importPathName{import};
+		auto importPath = kj::arrayPtr(&importPathName, 1);
+		auto fileSchema = parser.parseDiskFile(filename, filename, importPath);
+		auto schema = KJ_REQUIRE_NONNULL(fileSchema.findNested(name));
+		interfaceSchemaRegistry[name] = schema.asInterface();
+		lua_pushlightuserdata(L, &interfaceSchemaRegistry[name]);
+		return 1;
+	});
+}
+
+static int lencode (lua_State *L) {
+	return TryCatch(L, [L]() {
+		auto schema = luaFindSchema(L);
+		//TODO(optimize): use luaL_Buffer to avoid copy?
+		MallocMessageBuilder message;
+		message.adoptRoot(convertToStruct(L, 4, message, schema));
+		auto words = messageToFlatArray(message);
+		auto array = words.asBytes();
+		lua_pushlstring(L, (const char*)array.begin(), array.size());
+		return 1;
+	});
+}
+
+static int ldecode(lua_State *L) {
+	return TryCatch(L, [L]() {
+		auto schema = luaFindSchema(L);
+		size_t len = 0;
+		const char* bytes = luaL_checklstring(L, 4, &len);
+		//TODO what if bytes are not alined?
+		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
+		FlatArrayMessageReader message(words);
+		return convertFromStruct(L, message.getRoot<DynamicStruct>(schema));
+	});
+}
+
+static int lpretty(lua_State *L) {
+	return TryCatch(L, [L]() {
+		auto schema = luaFindSchema(L);
+		size_t len = 0;
+		const char* bytes = luaL_checklstring(L, 4, &len);
+		//TODO what if bytes are not alined?
+		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
+		FlatArrayMessageReader message(words);
+		auto text = kj::str(prettyPrint(message.getRoot<DynamicStruct>(schema)));
+		lua_pushlstring(L, text.cStr(), text.size());
+		return 1;
+	});
 }
 
 static const luaL_Reg luanprotolib[] = {
-	{ "load", load },
-	{ "encode", encode },
-	{ "decode", decode },
-	{ "pretty", pretty },
+	{ "parse", lparse },
+	{ "encode", lencode },
+	{ "decode", ldecode },
+	{ "pretty", lpretty },
 	{NULL, NULL}
 };
 
 
-/*
-** Open library
-*/
 extern "C" int LIBLUANP_API luaopen_luanproto (lua_State *L) {
   luaL_newlib(L, luanprotolib);
   return 1;
