@@ -272,7 +272,7 @@ static int TryCatch(lua_State *L, Func&& func)
 }
 
 //interface, method, side => schema
-static const StructSchema luaFindSchema(lua_State *L) {
+static const StructSchema luaFindSchema(lua_State *L, int *index = nullptr, kj::StringPtr* name = nullptr) {
 	void* lface = lua_touserdata(L, 1); //TODO error handling
 	const char* lmethod = nullptr;
 	int lidx = 0;
@@ -281,10 +281,16 @@ static const StructSchema luaFindSchema(lua_State *L) {
 	} else {
 		lmethod = luaL_checkstring(L, 2);
 	}
-	int lside = luaL_checkinteger(L, 3);
+	bool lside = lua_toboolean(L, 3);
 	const InterfaceSchema* face = (InterfaceSchema*)lface;
 	const auto method = (lmethod == nullptr) ? face->getMethods()[lidx] : face->getMethodByName(lmethod);
-	return lside == 0 ? method.getParamType() : method.getResultType();	
+	if (index) {
+		*index = method.getOrdinal();
+	}
+	if (name) {
+		*name = method.getProto().getName();
+	}
+	return lside ? method.getResultType() : method.getParamType();	
 }
 
 
@@ -305,39 +311,57 @@ static int lparse(lua_State *L) {
 
 static int lencode (lua_State *L) {
 	return TryCatch(L, [L]() {
-		auto schema = luaFindSchema(L);
+		int index = -1;
+		auto schema = luaFindSchema(L, &index);
 		//TODO(optimize): use luaL_Buffer to avoid copy?
 		MallocMessageBuilder message;
 		message.adoptRoot(convertToStruct(L, 4, message, schema));
 		auto words = messageToFlatArray(message);
 		auto array = words.asBytes();
+		lua_pushinteger(L, index);
 		lua_pushlstring(L, (const char*)array.begin(), array.size());
-		return 1;
+		return 2;
 	});
 }
 
 static int ldecode(lua_State *L) {
-	return TryCatch(L, [L]() {
-		auto schema = luaFindSchema(L);
-		size_t len = 0;
-		const char* bytes = luaL_checklstring(L, 4, &len);
+	size_t len = 0;
+	const char* bytes = luaL_checklstring(L, 4, &len);
+	int offset = luaL_checkinteger(L, 5);
+	return TryCatch(L, [=]() {
+		kj::StringPtr name;
+		auto schema = luaFindSchema(L, nullptr, &name);
 		//TODO what if bytes are not alined?
-		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
+		auto words = kj::arrayPtr((const word*)(bytes+offset), (len-offset)/sizeof(word));
 		FlatArrayMessageReader message(words);
-		return convertFromStruct(L, message.getRoot<DynamicStruct>(schema));
+		lua_pushlstring(L, name.cStr(), name.size());
+		return 1 + convertFromStruct(L, message.getRoot<DynamicStruct>(schema));
 	});
 }
 
 static int lpretty(lua_State *L) {
-	return TryCatch(L, [L]() {
-		auto schema = luaFindSchema(L);
-		size_t len = 0;
-		const char* bytes = luaL_checklstring(L, 4, &len);
+	size_t len = 0;
+	const char* bytes = luaL_checklstring(L, 4, &len);
+	int offset = luaL_checkinteger(L, 5);
+	return TryCatch(L, [=]() {
+		kj::StringPtr name;
+		auto schema = luaFindSchema(L, nullptr, &name);
 		//TODO what if bytes are not alined?
-		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
+		auto words = kj::arrayPtr((const word*)(bytes+offset), (len-offset)/sizeof(word));
 		FlatArrayMessageReader message(words);
 		auto text = kj::str(prettyPrint(message.getRoot<DynamicStruct>(schema)));
+		lua_pushlstring(L, name.cStr(), name.size());
 		lua_pushlstring(L, text.cStr(), text.size());
+		return 2;
+	});
+}
+static int linterface(lua_State *L) {
+	const char* lface = luaL_checkstring(L, 1);
+	return TryCatch(L, [=]() {
+		auto it = interfaceSchemaRegistry.find(lface);
+		if (it == interfaceSchemaRegistry.end())
+			return 0;
+		lua_pushlightuserdata(L, &it->second);
 		return 1;
 	});
 }
@@ -347,6 +371,7 @@ static const luaL_Reg luanprotolib[] = {
 	{ "encode", lencode },
 	{ "decode", ldecode },
 	{ "pretty", lpretty },
+	{ "interface", linterface },
 	{NULL, NULL}
 };
 
