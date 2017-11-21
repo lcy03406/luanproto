@@ -15,6 +15,6 @@ luanproto.so : luanproto.o
 clean :
 	rm -f luanproto.so *o
 
-install :
+install : all
 	cp -f luanproto.so ../../luaclib/
 

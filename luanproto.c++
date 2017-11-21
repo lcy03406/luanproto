@@ -296,13 +296,15 @@ static const StructSchema luaFindSchema(lua_State *L, int *index = nullptr, kj::
 
 static int lparse(lua_State *L) {
 	const char* name = luaL_checkstring(L, 1); //TODO multiple structs
-	const char* filename = luaL_checkstring(L, 2);
-	const char* import = luaL_checkstring(L, 3); //TODO multiple pathes
+	const char* Name = luaL_checkstring(L, 2); //TODO multiple structs
+	const char* filename = luaL_checkstring(L, 3);
+	const char* import = luaL_checkstring(L, 4); //TODO multiple pathes
+	const char* import1 = luaL_checkstring(L, 5); //TODO multiple pathes
 	return TryCatch(L, [=]() {
-		kj::StringPtr importPathName{import};
-		auto importPath = kj::arrayPtr(&importPathName, 1);
+		kj::StringPtr importPathName[2] = {import, import1};
+		auto importPath = kj::arrayPtr(importPathName, 2);
 		auto fileSchema = parser.parseDiskFile(filename, filename, importPath);
-		auto schema = KJ_REQUIRE_NONNULL(fileSchema.findNested(name));
+		auto schema = KJ_REQUIRE_NONNULL(fileSchema.findNested(Name));
 		interfaceSchemaRegistry[name] = schema.asInterface();
 		lua_pushlightuserdata(L, &interfaceSchemaRegistry[name]);
 		return 1;
