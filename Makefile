@@ -6,14 +6,14 @@ all : luanproto.so
 	
 .PHONY : all clean install
 
-luanproto.so : src/luanproto.o
+luanproto.so : luanproto.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-src/luanproto.o : src/luanproto.c++
+%.o : %.c++
 	$(CXX) $(CXXFLAGS) -c $^ -o $@ 
 
 clean :
-	rm -f luanproto.so src/*o
+	rm -f luanproto.so *o
 
 install :
 	cp -f luanproto.so ../../luaclib/
