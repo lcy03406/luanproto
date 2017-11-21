@@ -1,6 +1,9 @@
 #include <map>
 
 #include <lua/lua.hpp>
+#if LUA_VERSION_NUM<502
+#define lua_rawlen lua_objlen
+#endif
 
 #ifdef _MSC_VER
 #define KJ_STD_COMPAT
@@ -47,7 +50,7 @@ static Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilde
 		return nullptr;
 	if (index < 0)
 		index--;
-	auto orphan = message.getOrphanage().newOrphan(listSchema, size);
+	auto orphan = message.getOrphanage().newOrphan(listSchema, (capnp::uint)size);
 	auto list = orphan.get();
 	auto elementType = listSchema.getElementType();
 	for (size_t i = 1; i <= size; ++i) {
@@ -56,7 +59,7 @@ static Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilde
 		//TODO(optimize): avoid copy structs
 		auto value = convertToValue(L, -1, message, elementType);
 		if (value.getType() != DynamicValue::UNKNOWN) {
-			list.adopt(i-1, std::move(value));
+			list.adopt((capnp::uint)i-1, std::move(value));
 		}
 		lua_pop(L, 1);
 	}
@@ -118,15 +121,15 @@ static Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuild
 		case schema::Type::TEXT: {
 			size_t len = 0;
 			const char* str = lua_tolstring(L, index, &len);
-			auto orphan = message.getOrphanage().newOrphan<Text>(len);
-			std::copy(str, str+len, orphan.get().begin());
+			auto orphan = message.getOrphanage().newOrphan<Text>((capnp::uint)len);
+			memcpy(orphan.get().begin(), str, len);
 			return orphan;
 		} break;
 		case schema::Type::DATA: {
 			size_t len = 0;
 			const char* str = lua_tolstring(L, index, &len);
-			auto orphan = message.getOrphanage().newOrphan<Data>(len);
-			std::copy(str, str+len, orphan.get().begin());
+			auto orphan = message.getOrphanage().newOrphan<Data>((capnp::uint)len);
+			memcpy(orphan.get().begin(), str, len);
 			return orphan;
 		} break;
 		case schema::Type::LIST: {
@@ -276,12 +279,12 @@ static const StructSchema luaFindSchema(lua_State *L, int *index = nullptr, kj::
 	void* lface = lua_touserdata(L, 1); //TODO error handling
 	const char* lmethod = nullptr;
 	int lidx = 0;
-	if (lua_isinteger(L, 2)) {
-		lidx = lua_tointeger(L, 2);
+	if (lua_isnumber(L, 2)) {
+		lidx = (int)lua_tointeger(L, 2);
 	} else {
 		lmethod = luaL_checkstring(L, 2);
 	}
-	bool lside = lua_toboolean(L, 3);
+	int lside = lua_toboolean(L, 3);
 	const InterfaceSchema* face = (InterfaceSchema*)lface;
 	const auto method = (lmethod == nullptr) ? face->getMethods()[lidx] : face->getMethodByName(lmethod);
 	if (index) {
@@ -329,7 +332,7 @@ static int lencode (lua_State *L) {
 static int ldecode(lua_State *L) {
 	size_t len = 0;
 	const char* bytes = luaL_checklstring(L, 4, &len);
-	int offset = luaL_checkinteger(L, 5);
+	int offset = (int)luaL_checkinteger(L, 5);
 	return TryCatch(L, [=]() {
 		kj::StringPtr name;
 		auto schema = luaFindSchema(L, nullptr, &name);
@@ -344,7 +347,7 @@ static int ldecode(lua_State *L) {
 static int lpretty(lua_State *L) {
 	size_t len = 0;
 	const char* bytes = luaL_checklstring(L, 4, &len);
-	int offset = luaL_checkinteger(L, 5);
+	int offset = (int)luaL_checkinteger(L, 5);
 	return TryCatch(L, [=]() {
 		kj::StringPtr name;
 		auto schema = luaFindSchema(L, nullptr, &name);
@@ -383,3 +386,10 @@ extern "C" int LIBLUANP_API luaopen_luanproto (lua_State *L) {
   return 1;
 }
 
+namespace luanproto
+{
+	void init(const char* name, InterfaceSchema schema)
+	{
+		interfaceSchemaRegistry[name] = schema;
+	}
+}
