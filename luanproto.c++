@@ -327,6 +327,14 @@ namespace luanproto
 		interfaceSchemaRegistry[name] = schema;
 	}
 
+	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, const char* method)
+	{
+		auto it = interfaceSchemaRegistry.find(interface);
+		if (it == interfaceSchemaRegistry.end())
+			return nullptr;
+		return it->second.getMethodByName(method);
+	}
+
 	//interface, method, side => schema
 	StructSchema findSchema(lua_State *L, int index, int *ordinal, kj::StringPtr* name)
 	{
