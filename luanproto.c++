@@ -43,6 +43,7 @@ namespace luanproto
 #endif //LUANP_PARSER
 
 	std::map<std::string, InterfaceSchema> interfaceSchemaRegistry;
+	std::map<std::string, StructSchema> structSchemaRegistry;
 
 	Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema)
 	{
@@ -362,6 +363,15 @@ namespace luanproto
 		}
 		return lside ? method.getResultType() : method.getParamType();
 	}
+
+	//name => schema
+	StructSchema findStructSchema(lua_State *L, int index)
+	{
+		auto lname = luaL_checkstring(L, index);
+		auto it = structSchemaRegistry.find(lname);
+		KJ_ASSERT(it != structSchemaRegistry.end());
+		return it->second;
+	}
 }
 
 using namespace luanproto;
@@ -392,12 +402,30 @@ static int lparse(lua_State *L) {
 		auto importPath = kj::arrayPtr(importPathName, 2);
 		auto fileSchema = parser.parseDiskFile(filename, filename, importPath);
 		auto schema = KJ_REQUIRE_NONNULL(fileSchema.findNested(Name));
-		interfaceSchemaRegistry[name] = schema.asInterface();
-		lua_pushlightuserdata(L, &interfaceSchemaRegistry[name]);
+		if (schema.getProto().isInterface()) {
+			auto& p = interfaceSchemaRegistry[name] = schema.asInterface();
+			lua_pushlightuserdata(L, &p);
+			return 1;
+		} else if (schema.getProto().isStruct()) {
+			auto& p = structSchemaRegistry[name] = schema.asStruct();
+			lua_pushlightuserdata(L, &p);
+			return 1;
+		}
 		return 0;
 	});
 }
 #endif //LUANP_PARSER
+
+static int linterface(lua_State *L) {
+	const char* lface = luaL_checkstring(L, 1);
+	return TryCatch(L, [=]() {
+		auto it = interfaceSchemaRegistry.find(lface);
+		if (it == interfaceSchemaRegistry.end())
+			return 0;
+		lua_pushlightuserdata(L, &it->second);
+		return 1;
+	});
+}
 
 static int lencode (lua_State *L) {
 	return TryCatch(L, [L]() {
@@ -445,14 +473,29 @@ static int lpretty(lua_State *L) {
 		return 2;
 	});
 }
-static int linterface(lua_State *L) {
-	const char* lface = luaL_checkstring(L, 1);
-	return TryCatch(L, [=]() {
-		auto it = interfaceSchemaRegistry.find(lface);
-		if (it == interfaceSchemaRegistry.end())
-			return 0;
-		lua_pushlightuserdata(L, &it->second);
+
+static int lserialize(lua_State *L) {
+	return TryCatch(L, [L]() {
+		auto schema = findStructSchema(L, 1);
+		//TODO(optimize): use luaL_Buffer to avoid copy?
+		MallocMessageBuilder message;
+		message.adoptRoot(convertToStruct(L, 2, message, schema));
+		auto words = messageToFlatArray(message);
+		auto array = words.asBytes();
+		lua_pushlstring(L, (const char*)array.begin(), array.size());
 		return 1;
+	});
+}
+
+static int ldeserialize(lua_State *L) {
+	size_t len = 0;
+	const char* bytes = luaL_checklstring(L, 2, &len);
+	return TryCatch(L, [=]() {
+		auto schema = findStructSchema(L, 1);
+		//TODO what if bytes are not alined?
+		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
+		FlatArrayMessageReader message(words);
+		return convertFromStruct(L, message.getRoot<DynamicStruct>(schema));
 	});
 }
 
@@ -460,10 +503,12 @@ static const luaL_Reg luanprotolib[] = {
 #ifdef LUANP_PARSER
 	{ "parse", lparse },
 #endif //LUANP_PARSER
+	{ "interface", linterface },
 	{ "encode", lencode },
 	{ "decode", ldecode },
 	{ "pretty", lpretty },
-	{ "interface", linterface },
+	{ "serialize", lserialize },
+	{ "deserialize", ldeserialize },
 	{NULL, NULL}
 };
 
