@@ -69,7 +69,7 @@ namespace luanproto
 			}
 			lua_pop(L, 1);
 		}
-		return orphan;
+		return kj::mv(orphan);
 	}
 
 	Orphan<DynamicValue> convertToStruct(lua_State *L, int index, MessageBuilder& message, const StructSchema& structSchema)
@@ -103,7 +103,7 @@ namespace luanproto
 			}
 			lua_pop(L, 1);
 		}
-		return orphan;
+		return kj::mv(orphan);
 	}
 
 	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type)
@@ -149,7 +149,7 @@ namespace luanproto
 				const char* str = lua_tolstring(L, index, &len);
 				auto orphan = message.getOrphanage().newOrphan<Text>((capnp::uint)len);
 				memcpy(orphan.get().begin(), str, len);
-				return orphan;
+				return kj::mv(orphan);
 			}
 			break;
 			case schema::Type::DATA:
@@ -158,7 +158,7 @@ namespace luanproto
 				const char* str = lua_tolstring(L, index, &len);
 				auto orphan = message.getOrphanage().newOrphan<Data>((capnp::uint)len);
 				memcpy(orphan.get().begin(), str, len);
-				return orphan;
+				return kj::mv(orphan);
 			}
 			break;
 			case schema::Type::LIST:
