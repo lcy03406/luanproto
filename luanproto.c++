@@ -1,4 +1,5 @@
 #include <map>
+#include <string>
 
 #include <lua/lua.hpp>
 #if LUA_VERSION_NUM<502
