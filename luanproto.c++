@@ -1,7 +1,7 @@
 #include <map>
 #include <string>
 
-#include <lua/lua.hpp>
+#include "../common/kjlua.h"
 #if LUA_VERSION_NUM<502
 #define lua_rawlen lua_objlen
 #endif
@@ -377,20 +377,6 @@ namespace luanproto
 
 using namespace luanproto;
 
-template<typename Func>
-static int TryCatch(lua_State *L, Func&& func)
-{
-	int ret = 0;
-	KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
-		ret = func();
-	})) {
-		auto desc = e->getDescription();
-		lua_pushlstring(L, desc.cStr(), desc.size());
-		return lua_error(L);
-	}
-	return ret;
-}
-
 #ifdef LUANP_PARSER
 static int lparse(lua_State *L) {
 	const char* name = luaL_checkstring(L, 1); //TODO multiple structs
@@ -398,7 +384,7 @@ static int lparse(lua_State *L) {
 	const char* filename = luaL_checkstring(L, 3);
 	const char* import = luaL_checkstring(L, 4); //TODO multiple pathes
 	const char* import1 = luaL_checkstring(L, 5); //TODO multiple pathes
-	return TryCatch(L, [=]() {
+	return LuaTryCatch(L, [=]() {
 		kj::StringPtr importPathName[2] = {import, import1};
 		auto importPath = kj::arrayPtr(importPathName, 2);
 		auto fileSchema = parser.parseDiskFile(filename, filename, importPath);
@@ -419,7 +405,7 @@ static int lparse(lua_State *L) {
 
 static int linterface(lua_State *L) {
 	const char* lface = luaL_checkstring(L, 1);
-	return TryCatch(L, [=]() {
+	return LuaTryCatch(L, [=]() {
 		auto it = interfaceSchemaRegistry.find(lface);
 		if (it == interfaceSchemaRegistry.end())
 			return 0;
@@ -429,7 +415,7 @@ static int linterface(lua_State *L) {
 }
 
 static int lencode (lua_State *L) {
-	return TryCatch(L, [L]() {
+	return LuaTryCatch(L, [L]() {
 		int index = -1;
 		auto schema = findSchema(L, 1, &index);
 		//TODO(optimize): use luaL_Buffer to avoid copy?
@@ -447,7 +433,7 @@ static int ldecode(lua_State *L) {
 	size_t len = 0;
 	const char* bytes = luaL_checklstring(L, 4, &len);
 	int offset = (int)luaL_checkinteger(L, 5);
-	return TryCatch(L, [=]() {
+	return LuaTryCatch(L, [=]() {
 		kj::StringPtr name;
 		auto schema = findSchema(L, 1, nullptr, &name);
 		//TODO what if bytes are not alined?
@@ -462,7 +448,7 @@ static int lpretty(lua_State *L) {
 	size_t len = 0;
 	const char* bytes = luaL_checklstring(L, 4, &len);
 	int offset = (int)luaL_checkinteger(L, 5);
-	return TryCatch(L, [=]() {
+	return LuaTryCatch(L, [=]() {
 		kj::StringPtr name;
 		auto schema = findSchema(L, 1, nullptr, &name);
 		//TODO what if bytes are not alined?
@@ -476,7 +462,7 @@ static int lpretty(lua_State *L) {
 }
 
 static int lserialize(lua_State *L) {
-	return TryCatch(L, [L]() {
+	return LuaTryCatch(L, [L]() {
 		auto schema = findStructSchema(L, 1);
 		//TODO(optimize): use luaL_Buffer to avoid copy?
 		MallocMessageBuilder message;
@@ -491,7 +477,7 @@ static int lserialize(lua_State *L) {
 static int ldeserialize(lua_State *L) {
 	size_t len = 0;
 	const char* bytes = luaL_checklstring(L, 2, &len);
-	return TryCatch(L, [=]() {
+	return LuaTryCatch(L, [=]() {
 		auto schema = findStructSchema(L, 1);
 		//TODO what if bytes are not alined?
 		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
