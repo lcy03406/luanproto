@@ -3,9 +3,11 @@
 namespace luanproto
 {
 	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, const char* method);
+	kj::Maybe<capnp::StructSchema> findStruct(const char* name);
 
 #ifdef LUA_VERSION
-	void initSchema(const char* name, capnp::InterfaceSchema schema);
+	void initInterfaceSchema(const char* name, capnp::InterfaceSchema schema);
+	void initStructSchema(const char* name, capnp::StructSchema schema);
 	capnp::StructSchema findSchema(lua_State *L, int index, int *ordinal = nullptr, kj::StringPtr* name = nullptr);
 
 	capnp::Orphan<capnp::DynamicValue> convertToValue(lua_State *L, int index, capnp::MessageBuilder& message, const capnp::Type& type);

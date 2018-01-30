@@ -324,9 +324,14 @@ namespace luanproto
 		return 1;
 	}
 
-	void initSchema(const char* name, InterfaceSchema schema)
+	void initInterfaceSchema(const char* name, InterfaceSchema schema)
 	{
 		interfaceSchemaRegistry[name] = schema;
+	}
+	
+	void initStructSchema(const char* name, StructSchema schema)
+	{
+		structSchemaRegistry[name] = schema;
 	}
 
 	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, const char* method)
@@ -335,6 +340,14 @@ namespace luanproto
 		if (it == interfaceSchemaRegistry.end())
 			return nullptr;
 		return it->second.getMethodByName(method);
+	}
+
+	kj::Maybe<capnp::StructSchema> findStruct(const char* name)
+	{
+		auto it = structSchemaRegistry.find(name);
+		if (it == structSchemaRegistry.end())
+			return nullptr;
+		return it->second;
 	}
 
 	//interface, method, side => schema
