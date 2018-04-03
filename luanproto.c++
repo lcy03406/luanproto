@@ -295,7 +295,7 @@ namespace luanproto
 			auto element = value[i];
 			if (convertFromValue(L, element))
 			{
-				lua_rawseti(L, -2, i);
+				lua_rawseti(L, -2, i+1);
 			}
 		}
 		return 1;
@@ -494,7 +494,9 @@ static int ldeserialize(lua_State *L) {
 		auto schema = findStructSchema(L, 1);
 		//TODO what if bytes are not alined?
 		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
-		FlatArrayMessageReader message(words);
+		ReaderOptions options;
+		options.nestingLimit = 1024;
+		FlatArrayMessageReader message(words, options);
 		return convertFromStruct(L, message.getRoot<DynamicStruct>(schema));
 	});
 }
