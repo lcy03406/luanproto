@@ -15,6 +15,6 @@ clean :
 	rm -f luacapnp.so *o
 
 install : all
-	mkdir -p ../../luaclib
-	cp -f luacapnp.so ../../luaclib/
+	mkdir -p ../../../luaclib
+	cp -f luacapnp.so ../../../luaclib/
 
