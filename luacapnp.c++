@@ -23,25 +23,25 @@
 #pragma warning(pop)
 #endif
 
-#include "luanproto.h"
+#include "luacapnp.h"
 
 #ifdef _WIN32
-#ifdef LIBLUANP_EXPORTS
-#define LIBLUANP_API __declspec(dllexport)
+#ifdef LIBLUACAPNP_EXPORTS
+#define LIBLUACAPNP_API __declspec(dllexport)
 #else
-#define LIBLUANP_API __declspec(dllimport)
+#define LIBLUACAPNP_API __declspec(dllimport)
 #endif
 #else
-#define LIBLUANP_API 
+#define LIBLUACAPNP_API 
 #endif
 
 using namespace capnp;
 
-namespace luanproto
+namespace luacapnp
 {
-#ifdef LUANP_PARSER
+#ifdef LUACAPNP_PARSER
 	capnp::SchemaParser parser;
-#endif //LUANP_PARSER
+#endif //LUACAPNP_PARSER
 
 	std::map<std::string, InterfaceSchema> interfaceSchemaRegistry;
 	std::map<std::string, StructSchema> structSchemaRegistry;
@@ -347,7 +347,7 @@ namespace luanproto
 		auto it = interfaceSchemaRegistry.find(interface);
 		if (it == interfaceSchemaRegistry.end())
 			return nullptr;
-		return it->second.getMethods[method];
+		return it->second.getMethods()[method];
 	}
 
 	kj::Maybe<capnp::StructSchema> findStruct(const char* name)
@@ -396,9 +396,9 @@ namespace luanproto
 	}
 }
 
-using namespace luanproto;
+using namespace luacapnp;
 
-#ifdef LUANP_PARSER
+#ifdef LUACAPNP_PARSER
 static int lparse(lua_State *L) {
 	const char* name = luaL_checkstring(L, 1); //TODO multiple structs
 	const char* Name = luaL_checkstring(L, 2); //TODO multiple structs
@@ -422,7 +422,7 @@ static int lparse(lua_State *L) {
 		return 0;
 	});
 }
-#endif //LUANP_PARSER
+#endif //LUACAPNP_PARSER
 
 static int linterface(lua_State *L) {
 	const char* lface = luaL_checkstring(L, 1);
@@ -509,10 +509,10 @@ static int ldeserialize(lua_State *L) {
 	});
 }
 
-static const luaL_Reg luanprotolib[] = {
-#ifdef LUANP_PARSER
+static const luaL_Reg luacapnplib[] = {
+#ifdef LUACAPNP_PARSER
 	{ "parse", lparse },
-#endif //LUANP_PARSER
+#endif //LUACAPNP_PARSER
 	{ "interface", linterface },
 	{ "encode", lencode },
 	{ "decode", ldecode },
@@ -523,8 +523,8 @@ static const luaL_Reg luanprotolib[] = {
 };
 
 
-extern "C" int LIBLUANP_API luaopen_luanproto (lua_State *L) {
-  luaL_newlib(L, luanprotolib);
+extern "C" int LIBLUACAPNP_API luaopen_luacapnp (lua_State *L) {
+  luaL_newlib(L, luacapnplib);
   return 1;
 }
 

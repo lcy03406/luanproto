@@ -1,6 +1,6 @@
 #pragma once
 
-namespace luanproto
+namespace luacapnp
 {
 	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, const char* method);
 	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, int method);
