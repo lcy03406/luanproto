@@ -342,6 +342,14 @@ namespace luanproto
 		return it->second.getMethodByName(method);
 	}
 
+	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, int method)
+	{
+		auto it = interfaceSchemaRegistry.find(interface);
+		if (it == interfaceSchemaRegistry.end())
+			return nullptr;
+		return it->second.getMethods[method];
+	}
+
 	kj::Maybe<capnp::StructSchema> findStruct(const char* name)
 	{
 		auto it = structSchemaRegistry.find(name);

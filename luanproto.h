@@ -3,6 +3,7 @@
 namespace luanproto
 {
 	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, const char* method);
+	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, int method);
 	kj::Maybe<capnp::StructSchema> findStruct(const char* name);
 
 #ifdef LUA_VERSION

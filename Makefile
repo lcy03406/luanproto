@@ -1,5 +1,5 @@
-CXXFLAGS = -std=c++11 -g -O2 -Wall -fPIC -I../build/include -DLUANP_PARSER
-LDFLAGS = -shared -L../../lib -lcapnp-rpc -lcapnpc -lcapnp -lkj
+CXXFLAGS = -std=c++11 -g -O2 -Wall -fPIC -I../../../dep/build/include -DLUANP_PARSER
+LDFLAGS = -shared -L../../../lib -lcapnp-rpc -lcapnpc -lcapnp -lkj
 
 all : luanproto.so
 	
