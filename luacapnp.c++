@@ -42,6 +42,7 @@ namespace luacapnp
 #ifdef LUACAPNP_PARSER
 	capnp::SchemaParser parser;
 #endif //LUACAPNP_PARSER
+	SchemaLoader loader;
 
 	std::map<std::string, InterfaceSchema> interfaceSchemaRegistry;
 	std::map<std::string, StructSchema> structSchemaRegistry;
@@ -324,6 +325,56 @@ namespace luacapnp
 		return 1;
 	}
 
+	static kj::StringPtr ShortName(const kj::StringPtr& name)
+	{
+		KJ_IF_MAYBE(col, name.findLast(':'))
+		{
+			return name.slice(*col+1);
+		}
+		else
+		{
+			return name;
+		}
+	}
+
+	void initFromFile(const char* filename)
+	{
+#ifdef _MSC_VER
+		int fd = open(filename, O_RDONLY | O_BINARY);
+#else
+		int fd = open(filename, O_RDONLY);
+#endif
+		KJ_ASSERT(fd >= 0, "cannot open file", filename, errno);
+		::capnp::PackedFdMessageReader file{ kj::AutoCloseFd(fd) };
+		auto root = file.getRoot<DynamicStruct>(capnp::Schema::from<schema::CodeGeneratorRequest>());
+		auto nodes = root.get("nodes").as<DynamicList>();
+		kj::Vector<uint64_t> ids;
+		for (auto n : nodes)
+		{
+			auto node = n.as<schema::Node>();
+			if (node.isInterface() || node.isStruct() && ShortName(node.getDisplayName()).startsWith("Battle"))
+			{
+				auto id = node.getId();
+				ids.add(id);
+			}
+			loader.load(node);
+		}
+		for (auto id : ids)
+		{
+			auto s = loader.get(id);
+			auto name = ShortName(s.getProto().getDisplayName());
+			if (s.getProto().isInterface())
+			{
+				auto lname = kj::str((char)tolower(name[0]), name.slice(1));
+				initInterfaceSchema(lname.cStr(), s.asInterface());
+			}
+			else
+			{
+				initStructSchema(name.cStr(), s.asStruct());
+			}
+		}
+	}
+
 	void initInterfaceSchema(const char* name, InterfaceSchema schema)
 	{
 		interfaceSchemaRegistry[name] = schema;
@@ -423,6 +474,7 @@ static int lparse(lua_State *L) {
 	});
 }
 #endif //LUACAPNP_PARSER
+
 
 static int linterface(lua_State *L) {
 	const char* lface = luaL_checkstring(L, 1);
