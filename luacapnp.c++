@@ -1,5 +1,6 @@
 #include <map>
 #include <string>
+#include <iostream>
 
 #include "../utils/kjlua.h"
 #if LUA_VERSION_NUM<502
@@ -561,9 +562,44 @@ static int ldeserialize(lua_State *L) {
 	});
 }
 
+static int lenum(lua_State *L) {
+	const char* filepath = luaL_checkstring(L, 1);
+	const char* enumname = luaL_checkstring(L, 2);
+	const char* rpcdir = luaL_checkstring(L, 3);
+	const char* incdir = luaL_checkstring(L, 4);
+	kj::StringPtr import[2] = {rpcdir, incdir};
+	auto importPath = kj::arrayPtr(import, 2);
+	auto func = [=] () -> int {
+		lua_newtable(L);
+		auto fileSchema = parser.parseDiskFile(filepath, filepath, importPath);
+		auto parsSchema = fileSchema.findNested(enumname);
+		if(parsSchema == nullptr) 
+		{
+			std::cerr << "Parse failed: " <<"not found " << enumname << std::endl; 
+			return 1;
+		}
+		auto schema = ::kj::_::readMaybe(parsSchema);
+		if(schema && schema->getProto().isEnum())
+		{
+			auto enumSchema = schema->asEnum();
+			auto enumerants = enumSchema.getEnumerants();
+			for(auto enumerant: enumerants)
+			{
+				auto name = enumerant.getProto().getName();
+				lua_pushlstring(L, name.cStr(), name.size());
+				lua_pushnumber(L, enumerant.getIndex());
+				lua_rawset(L, -3);
+			}
+		}
+		return 1;
+	};
+	return LuaTryCatch(L, func);
+}
+
 static const luaL_Reg luacapnplib[] = {
 #ifdef LUACAPNP_PARSER
 	{ "parse", lparse },
+	{ "enum", lenum },
 #endif //LUACAPNP_PARSER
 	{ "interface", linterface },
 	{ "encode", lencode },
