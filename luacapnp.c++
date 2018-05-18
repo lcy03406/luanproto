@@ -36,6 +36,12 @@
 #define LIBLUACAPNP_API 
 #endif
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
+
 using namespace capnp;
 
 namespace luacapnp
