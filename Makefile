@@ -1,4 +1,4 @@
-CXXFLAGS = -std=c++11 -g -O2 -Wall -fPIC -I../../../dep/build/include -DLUACAPNP_PARSER
+CXXFLAGS = -std=c++11 -g -O2 -Wall -fPIC -I../../../dep/build/include -DLUACAPNP_PARSER -g
 LDFLAGS = -shared -L../../../lib -lcapnp-rpc -lcapnpc -lcapnp -lkj
 
 all : luacapnp.so
