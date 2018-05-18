@@ -568,15 +568,17 @@ static int ldeserialize(lua_State *L) {
 	});
 }
 
+#ifdef LUACAPNP_PARSER
 static int lenum(lua_State *L) {
 	const char* filepath = luaL_checkstring(L, 1);
 	const char* enumname = luaL_checkstring(L, 2);
 	const char* rpcdir = luaL_checkstring(L, 3);
 	const char* incdir = luaL_checkstring(L, 4);
-	kj::StringPtr import[2] = {rpcdir, incdir};
-	auto importPath = kj::arrayPtr(import, 2);
 	auto func = [=] () -> int {
 		lua_newtable(L);
+		const kj::StringPtr import[] = { rpcdir, incdir };
+		auto importPath = kj::arrayPtr(import, kj::size(import));
+		capnp::SchemaParser parser;
 		auto fileSchema = parser.parseDiskFile(filepath, filepath, importPath);
 		auto parsSchema = fileSchema.findNested(enumname);
 		if(parsSchema == nullptr) 
@@ -601,6 +603,7 @@ static int lenum(lua_State *L) {
 	};
 	return LuaTryCatch(L, func);
 }
+#endif
 
 static const luaL_Reg luacapnplib[] = {
 #ifdef LUACAPNP_PARSER
