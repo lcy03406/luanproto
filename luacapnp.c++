@@ -473,7 +473,7 @@ static int lparse(lua_State *L) {
 			lua_pushlightuserdata(L, &p);
 			return 1;
 		} else if (schema.getProto().isStruct()) {
-			auto& p = structSchemaRegistry[name] = schema.asStruct();
+			auto& p = structSchemaRegistry[Name] = schema.asStruct();
 			lua_pushlightuserdata(L, &p);
 			return 1;
 		}
