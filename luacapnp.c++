@@ -1,6 +1,7 @@
 #include <map>
 #include <string>
 #include <iostream>
+#include <set>
 
 #include "../utils/kjlua.h"
 #if LUA_VERSION_NUM<502
@@ -20,6 +21,7 @@
 #include <capnp/schema-parser.h>
 #include <capnp/pretty-print.h>
 #include <kj/io.h>
+#include <kj/one-of.h>
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -54,7 +56,34 @@ namespace luacapnp
 	std::map<std::string, InterfaceSchema> interfaceSchemaRegistry;
 	std::map<std::string, StructSchema> structSchemaRegistry;
 
-	Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema)
+	kj::Maybe<std::pair<kj::StringPtr, kj::StringPtr>> isMap(const StructSchema::Field* field)
+	{
+		if (field == nullptr)
+			return nullptr;
+		auto proto = field->getProto();
+		if (!proto.hasAnnotations())
+			return nullptr;
+		bool hasKey = false;
+		std::pair<kj::StringPtr, kj::StringPtr> ret;
+		for (auto anno : proto.getAnnotations())
+		{
+			auto id = anno.getId();
+			if (id == 0xe3caf55077c0bd92)
+			{
+				ret.first = anno.getValue().getText();
+				hasKey = true;
+			}
+			else if (id == 0x8e28078f594c7ec5)
+			{
+				ret.second = anno.getValue().getText();
+			}
+		}
+		if (!hasKey)
+			return nullptr;
+		return ret;
+	}
+
+	Orphan<DynamicValue> convertArrayToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema)
 	{
 		if (!lua_istable(L, index))
 			return nullptr;
@@ -71,15 +100,137 @@ namespace luacapnp
 			lua_pushinteger(L, i);
 			lua_gettable(L, index);
 			//TODO(optimize): avoid copy structs
-			auto value = convertToValue(L, -1, message, elementType);
+			auto value = convertToValue(L, -1, message, elementType, nullptr);
 			if (value.getType() != DynamicValue::UNKNOWN)
 			{
-				list.adopt((capnp::uint)i - 1, std::move(value));
+				list.adopt((capnp::uint)i - 1, kj::mv(value));
 			}
 			lua_pop(L, 1);
 		}
 		return kj::mv(orphan);
 	}
+
+	class MapKey : public kj::OneOf<lua_Number, lua_Integer, kj::String> {
+	public:
+		typedef kj::OneOf<lua_Number, lua_Integer, kj::String> Base;
+		MapKey(lua_Number v) : Base(v) {}
+		MapKey(lua_Integer v) : Base(v) {}
+		MapKey(kj::String&& v) : Base(kj::mv(v)) {}
+		bool operator < (const MapKey& other) const {
+			auto w1 = this->which();
+			auto w2 = other.which();
+			if (w1 != w2) {
+				return w1 < w2;
+			}
+			KJ_SWITCH_ONEOF((*this)) {
+				KJ_CASE_ONEOF(v, lua_Number) {
+					return v < other.get<lua_Number>();
+				}
+				KJ_CASE_ONEOF(v, lua_Integer) {
+					return v < other.get<lua_Integer>();
+				}
+				KJ_CASE_ONEOF(v, kj::String) {
+					return v < other.get<kj::String>();
+				}
+			}
+			return false;
+		}
+		void push(lua_State *L) const {
+			KJ_SWITCH_ONEOF((*this)) {
+				KJ_CASE_ONEOF(v, lua_Number) {
+					lua_pushnumber(L, v);
+				}
+				KJ_CASE_ONEOF(v, lua_Integer) {
+					lua_pushinteger(L, v);
+				}
+				KJ_CASE_ONEOF(v, kj::String) {
+					lua_pushlstring(L, v.cStr(), v.size());
+				}
+			}
+		}
+	};
+
+	Orphan<DynamicValue> convertMapToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema, const kj::StringPtr& keyName, const kj::StringPtr& valueName)
+	{
+		if (!lua_istable(L, index))
+			return nullptr;
+		std::set<MapKey> keys;
+		lua_pushnil(L);
+		if (index < 0)
+			index--;
+		while (lua_next(L, index) != 0) {
+			if (lua_isinteger(L, -2)) {
+				keys.emplace(lua_tointeger(L, -2));
+			} else if (lua_isnumber(L, -2)) {
+				keys.emplace(lua_tonumber(L, -2));
+			} else if (lua_isstring(L, -2)) {
+				size_t len;
+				const char* str = lua_tolstring(L, -2, &len);
+				keys.emplace(kj::heapString(str, len));
+			} else {
+				//TODO support more types?
+			}
+			lua_pop(L, 1);
+		}
+		auto size = keys.size();
+		if (size == 0)
+			return nullptr;
+		if (index < 0)
+			index--;
+		auto orphan = message.getOrphanage().newOrphan(listSchema, (capnp::uint)size);
+		auto list = orphan.get();
+		auto elementType = listSchema.getElementType();
+		auto keyFieldMaybe = keyName.size() > 0 ? elementType.asStruct().findFieldByName(keyName) : nullptr;
+		auto valueFieldMaybe = valueName.size() > 0 ? elementType.asStruct().findFieldByName(valueName) : nullptr;
+		KJ_ASSERT((keyName.size() == 0) == (keyFieldMaybe == nullptr));
+		KJ_ASSERT((valueName.size() == 0) == (valueFieldMaybe == nullptr));
+		capnp::uint i = 0;
+		for (auto& key : keys) {
+			key.push(L);
+			lua_pushvalue(L, -1);
+			lua_gettable(L, index);
+			KJ_IF_MAYBE(keyField, keyFieldMaybe) {
+				KJ_IF_MAYBE(valueField, valueFieldMaybe) {
+					auto value = list[i].as<DynamicStruct>();
+					auto keyValue = convertToValue(L, -2, message, keyField->getType(), keyField);
+					if (keyValue.getType() != DynamicValue::UNKNOWN) {
+						value.adopt(*keyField, kj::mv(keyValue));
+					}
+					auto valueValue = convertToValue(L, -1, message, valueField->getType(), valueField);
+					if (valueValue.getType() != DynamicValue::UNKNOWN) {
+						value.adopt(*valueField, kj::mv(valueValue));
+					}
+				} else {
+					//TODO(optimize): avoid copy structs
+					auto value = convertToValue(L, -1, message, elementType, nullptr);
+					if (value.getType() != DynamicValue::UNKNOWN) {
+						list.adopt(i, kj::mv(value));
+					}
+				}
+			} else {
+				auto value = convertToValue(L, -2, message, elementType, nullptr);
+				if (value.getType() != DynamicValue::UNKNOWN) {
+					list.adopt(i, kj::mv(value));
+				}
+			}
+			i++;
+			lua_pop(L, 2);
+		}
+		return kj::mv(orphan);
+	}
+
+	Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema, const StructSchema::Field* field)
+	{
+		KJ_IF_MAYBE(map, isMap(field))
+		{
+			return convertMapToList(L, index, message, listSchema, map->first, map->second);
+		}
+		else
+		{
+			return convertArrayToList(L, index, message, listSchema);
+		}
+	}
+
 
 	Orphan<DynamicValue> convertToStruct(lua_State *L, int index, MessageBuilder& message, const StructSchema& structSchema)
 	{
@@ -92,17 +243,17 @@ namespace luacapnp
 		auto obj = orphan.get();
 		while (lua_next(L, index) != 0)
 		{
-			if (lua_isstring(L, -2))
+			if (LUA_TSTRING == lua_type(L, -2))
 			{
 				const char* fieldName = lua_tostring(L, -2);
 				KJ_IF_MAYBE(field, structSchema.findFieldByName(fieldName))
 				{
 					auto fieldType = field->getType();
 					//TODO(optimize): avoid coping group fields.
-					auto value = convertToValue(L, -1, message, fieldType);
+					auto value = convertToValue(L, -1, message, fieldType, field);
 					if (value.getType() != DynamicValue::UNKNOWN)
 					{
-						obj.adopt(*field, std::move(value));
+						obj.adopt(*field, kj::mv(value));
 					}
 				}
 				else
@@ -115,7 +266,7 @@ namespace luacapnp
 		return kj::mv(orphan);
 	}
 
-	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type)
+	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type, const StructSchema::Field* field)
 	{
 		switch (type.which())
 		{
@@ -142,8 +293,7 @@ namespace luacapnp
 			break;
 			case schema::Type::UINT64:
 			{
-				//TODO handle big values
-				return lua_tointeger(L, index);
+				return (uint64_t)lua_tointeger(L, index);
 			}
 			break;
 			case schema::Type::FLOAT32:
@@ -173,7 +323,7 @@ namespace luacapnp
 			case schema::Type::LIST:
 			{
 				auto listSchema = type.asList();
-				return convertToList(L, index, message, listSchema);
+				return convertToList(L, index, message, listSchema, field);
 			}
 			break;
 			case schema::Type::ENUM:
@@ -214,7 +364,7 @@ namespace luacapnp
 		return nullptr;
 	}
 
-	int convertFromValue(lua_State *L, DynamicValue::Reader value)
+	int convertFromValue(lua_State *L, DynamicValue::Reader value, const StructSchema::Field* field)
 	{
 		switch (value.getType())
 		{
@@ -262,7 +412,7 @@ namespace luacapnp
 			} break;
 			case DynamicValue::LIST:
 			{
-				return convertFromList(L, value.as<DynamicList>());
+				return convertFromList(L, value.as<DynamicList>(), field);
 			} break;
 			case DynamicValue::ENUM:
 			{
@@ -294,19 +444,69 @@ namespace luacapnp
 		return 0;
 	}
 
-	int convertFromList(lua_State *L, DynamicList::Reader value)
+	int convertFromListToArray(lua_State *L, DynamicList::Reader value)
 	{
 		lua_newtable(L);
 		unsigned size = value.size();
 		for (unsigned i = 0; i < size; ++i)
 		{
 			auto element = value[i];
-			if (convertFromValue(L, element))
+			if (convertFromValue(L, element, nullptr))
 			{
 				lua_rawseti(L, -2, i+1);
 			}
 		}
 		return 1;
+	}
+
+	int convertFromListToMap(lua_State *L, DynamicList::Reader value, const kj::StringPtr& keyName, const kj::StringPtr& valueName)
+	{
+		auto elementType = value.getSchema().getElementType();
+		auto keyFieldMaybe = keyName.size() > 0 ? elementType.asStruct().findFieldByName(keyName) : nullptr;
+		auto valueFieldMaybe = valueName.size() > 0 ? elementType.asStruct().findFieldByName(valueName) : nullptr;
+		lua_newtable(L);
+		unsigned size = value.size();
+		for (unsigned i = 0; i < size; ++i) {
+			auto element = value[i];
+			KJ_IF_MAYBE(keyField, keyFieldMaybe) {
+				auto elementStruct = element.as<DynamicStruct>();
+				auto keyValue = elementStruct.get(*keyField);
+				if (convertFromValue(L, keyValue, keyField)) {
+					KJ_IF_MAYBE(valueField, valueFieldMaybe) {
+						auto valueValue = elementStruct.get(*valueField);
+						if (convertFromValue(L, valueValue, valueField)) {
+							lua_rawset(L, -3);
+						} else {
+							lua_pop(L, 1);
+						}
+					} else {
+						if (convertFromValue(L, element, nullptr)) {
+							lua_rawset(L, -3);
+						} else {
+							lua_pop(L, 1);
+						}
+					}
+				}
+			} else {
+				if (convertFromValue(L, element, nullptr)) {
+					lua_pushboolean(L, 1);
+					lua_rawset(L, -3);
+				}
+			}
+		}
+		return 1;
+	}
+
+	int convertFromList(lua_State *L, DynamicList::Reader value, const StructSchema::Field* field)
+	{
+		KJ_IF_MAYBE(map, isMap(field))
+		{
+			return convertFromListToMap(L, value, map->first, map->second);
+		}
+		else
+		{
+			return convertFromListToArray(L, value);
+		}
 	}
 
 	int convertFromStruct(lua_State *L, DynamicStruct::Reader value)
@@ -319,7 +519,7 @@ namespace luacapnp
 				continue;
 			auto name = field.getProto().getName();
 			lua_pushlstring(L, name.cStr(), name.size());
-			if (convertFromValue(L, value.get(field)))
+			if (convertFromValue(L, value.get(field), &field))
 			{
 				lua_rawset(L, -3);
 			}
@@ -359,7 +559,8 @@ namespace luacapnp
 		for (auto n : nodes)
 		{
 			auto node = n.as<schema::Node>();
-			if (node.isInterface() || node.isStruct() && ShortName(node.getDisplayName()).startsWith("Battle"))
+			//TODO no special "Battle"
+			if (node.isInterface() || (node.isStruct() && ShortName(node.getDisplayName()).startsWith("Battle")))
 			{
 				auto id = node.getId();
 				ids.add(id);
@@ -559,12 +760,26 @@ static int ldeserialize(lua_State *L) {
 	const char* bytes = luaL_checklstring(L, 2, &len);
 	return LuaTryCatch(L, [=]() {
 		auto schema = findStructSchema(L, 1);
-		//TODO what if bytes are not alined?
 		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
 		ReaderOptions options;
 		options.nestingLimit = 1024;
 		FlatArrayMessageReader message(words, options);
 		return convertFromStruct(L, message.getRoot<DynamicStruct>(schema));
+	});
+}
+
+static int ltext(lua_State *L) {
+	size_t len = 0;
+	const char* bytes = luaL_checklstring(L, 2, &len);
+	int pretty = lua_toboolean(L, 3);
+	return LuaTryCatch(L, [=]() {
+		auto schema = findStructSchema(L, 1);
+		auto words = kj::arrayPtr((const word*)bytes, len/sizeof(word));
+		FlatArrayMessageReader message(words);
+		auto text = pretty ? kj::str(prettyPrint(message.getRoot<DynamicStruct>(schema)))
+			: kj::str(message.getRoot<DynamicStruct>(schema));
+		lua_pushlstring(L, text.cStr(), text.size());
+		return 1;
 	});
 }
 
@@ -616,6 +831,7 @@ static const luaL_Reg luacapnplib[] = {
 	{ "pretty", lpretty },
 	{ "serialize", lserialize },
 	{ "deserialize", ldeserialize },
+	{ "text", ltext },
 	{NULL, NULL}
 };
 
