@@ -159,10 +159,17 @@ namespace luacapnp
 		if (index < 0)
 			index--;
 		while (lua_next(L, index) != 0) {
-			if (lua_isinteger(L, -2)) {
-				keys.emplace(lua_tointeger(L, -2));
-			} else if (lua_isnumber(L, -2)) {
-				keys.emplace(lua_tonumber(L, -2));
+			if (lua_isnumber(L, -2)) {
+				lua_Integer i = lua_tointeger(L, -2);
+				lua_Number f = lua_tonumber(L, -2);
+				if (i == (lua_Integer)f && f == (lua_Number)i)
+				{
+					keys.emplace(i);
+				}
+				else
+				{
+					keys.emplace(f);
+				}
 			} else if (lua_isstring(L, -2)) {
 				size_t len;
 				const char* str = lua_tolstring(L, -2, &len);
