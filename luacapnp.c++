@@ -88,8 +88,8 @@ namespace luacapnp
 		if (!lua_istable(L, index))
 			return nullptr;
 		size_t size = lua_rawlen(L, index);
-		if (size == 0)
-			return nullptr;
+		//if (size == 0)
+		//	return nullptr;
 		if (index < 0)
 			index--;
 		auto orphan = message.getOrphanage().newOrphan(listSchema, (capnp::uint)size);
@@ -180,8 +180,8 @@ namespace luacapnp
 			lua_pop(L, 1);
 		}
 		auto size = keys.size();
-		if (size == 0)
-			return nullptr;
+		//if (size == 0)
+		//	return nullptr;
 		if (index < 0)
 			index--;
 		auto orphan = message.getOrphanage().newOrphan(listSchema, (capnp::uint)size);
