@@ -3,17 +3,23 @@
 #include <iostream>
 #include <set>
 
-#include "../utils/kjlua.h"
-#if LUA_VERSION_NUM<502
-#define lua_rawlen lua_objlen
-#endif
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+
 
 #ifdef _MSC_VER
+#include <io.h>
 #define KJ_STD_COMPAT
 #pragma warning(disable:4996)
 #pragma warning(push)
-#pragma warning(disable:4244 4267 4800)
+#pragma warning(disable:4244) // conversion from 'unsigned __int64' to 'capnp::uint', possible loss of data
+#pragma warning(disable:4267) // conversion from 'size_t' to 'capnp::uint', possible loss of data
+#pragma warning(disable:4521) // multiple copy constructors specified
+#pragma warning(disable:4800) // forcing value to bool 'true' or 'false' (performance warning)
+
 #endif
+#include <kj/debug.h>
 #include <capnp/message.h>
 #include <capnp/serialize-packed.h>
 #include <capnp/pointer-helpers.h>
@@ -26,23 +32,44 @@
 #pragma warning(pop)
 #endif
 
+#include <lua/lua.hpp>
+#if LUA_VERSION_NUM<502
+#define lua_rawlen lua_objlen
+#endif
+
 #include "luacapnp.h"
 
-#ifdef _WIN32
-#ifdef LIBLUACAPNP_EXPORTS
+#ifdef _WIN32 // TODO add options to static linkage
 #define LIBLUACAPNP_API __declspec(dllexport)
-#else
-#define LIBLUACAPNP_API __declspec(dllimport)
-#endif
 #else
 #define LIBLUACAPNP_API 
 #endif
 
-#ifndef _WIN32
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#endif
+
+template<typename Func>
+inline int LuaTryCatch(lua_State *L, Func&& func)
+{
+	int ret = 0;
+	bool jump = false;
+	//make sure cb is destructed before longjmp
+	//TODO for now, func() must not raise any lua error
+	{
+		KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]()
+		{
+			ret = func();
+		}))
+		{
+			auto desc = e->getDescription();
+			lua_pushlstring(L, desc.cStr(), desc.size());
+			jump = true;
+		}
+	}
+	if (jump)
+	{
+		return lua_error(L);
+	}
+	return ret;
+}
 
 using namespace capnp;
 
