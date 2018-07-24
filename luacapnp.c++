@@ -587,32 +587,31 @@ namespace luacapnp
 #endif
 		KJ_ASSERT(fd >= 0, "cannot open file", filename, errno);
 		::capnp::PackedFdMessageReader file{ kj::AutoCloseFd(fd) };
-		auto root = file.getRoot<DynamicStruct>(capnp::Schema::from<schema::CodeGeneratorRequest>());
-		auto nodes = root.get("nodes").as<DynamicList>();
-		kj::Vector<uint64_t> ids;
+		auto root = file.getRoot<schema::CodeGeneratorRequest>();
+		auto nodes = root.getNodes();
+		kj::Vector<uint64_t> fileids;
 		for (auto n : nodes)
 		{
-			auto node = n.as<schema::Node>();
-			//TODO no special "Battle"
-			if (node.isInterface() || (node.isStruct() && ShortName(node.getDisplayName()).startsWith("Battle")))
-			{
-				auto id = node.getId();
-				ids.add(id);
-			}
-			loader.load(node);
+			loader.load(n);
 		}
-		for (auto id : ids)
+		for (auto r : root.getRequestedFiles())
 		{
-			auto s = loader.get(id);
-			auto name = ShortName(s.getProto().getDisplayName());
-			if (s.getProto().isInterface())
+			auto fid = r.getId();
+			auto f = loader.get(fid);
+			for (auto nn : f.getProto().getNestedNodes())
 			{
-				auto lname = kj::str((char)tolower(name[0]), name.slice(1));
-				initInterfaceSchema(lname.cStr(), s.asInterface());
-			}
-			else
-			{
-				initStructSchema(name.cStr(), s.asStruct());
+				auto node = loader.get(nn.getId());
+				auto name = nn.getName();
+				auto s = node.getProto();
+				if (s.isInterface())
+				{
+					auto lname = kj::str((char)tolower(name[0]), name.slice(1));
+					initInterfaceSchema(lname.cStr(), node.asInterface());
+				}
+				else if (s.isStruct())
+				{
+					initStructSchema(name.cStr(), node.asStruct());
+				}
 			}
 		}
 	}
