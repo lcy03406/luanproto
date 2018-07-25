@@ -302,6 +302,7 @@ namespace luacapnp
 
 	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type, const StructSchema::Field* field)
 	{
+		std::cout << "type:" << type.which() << std::endl;
 		switch (type.which())
 		{
 			case schema::Type::VOID:
@@ -322,12 +323,31 @@ namespace luacapnp
 			case schema::Type::UINT16:
 			case schema::Type::UINT32:
 			{
-				return lua_tointeger(L, index);
+				lua_Integer num = 0;
+				if(lua_isnumber(L, index))
+				{
+					num = (lua_Integer)lua_tonumber(L, index);
+				}
+				else 
+				{
+					num = lua_tointeger(L, index);
+				}
+				//std::cout << num << std::endl;
+				return num;
 			}
 			break;
 			case schema::Type::UINT64:
 			{
-				return (uint64_t)lua_tointeger(L, index);
+				lua_Integer num = 0;
+				if(lua_isnumber(L, index))
+				{
+					num = (lua_Integer)lua_tonumber(L, index);
+				}
+				else 
+				{
+					num = lua_tointeger(L, index);
+				}
+				return (uint64_t)num;
 			}
 			break;
 			case schema::Type::FLOAT32:
