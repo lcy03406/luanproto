@@ -302,7 +302,7 @@ namespace luacapnp
 
 	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type, const StructSchema::Field* field)
 	{
-		std::cout << "type:" << type.which() << std::endl;
+		//std::cout << "type:" << type.which() << std::endl;
 		switch (type.which())
 		{
 			case schema::Type::VOID:
