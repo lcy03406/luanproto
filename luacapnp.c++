@@ -300,6 +300,29 @@ namespace luacapnp
 		return kj::mv(orphan);
 	}
 
+	lua_Integer toInteger(lua_State *L, int index)
+	{
+		lua_Integer num = 0;
+		if(lua_isinteger(L, index))
+		{
+			num = lua_tointeger(L, index);
+		}
+		else if(lua_isnumber(L, index))
+		{
+			num = lua_tonumber(L, index);
+		}
+		else 
+		{
+			std::cerr << "unknown type" << std::endl;
+		}
+		//std::cout << num << std::endl;
+		return num;
+
+	
+	}
+
+
+
 	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type, const StructSchema::Field* field)
 	{
 		//std::cout << "type:" << type.which() << std::endl;
@@ -323,31 +346,12 @@ namespace luacapnp
 			case schema::Type::UINT16:
 			case schema::Type::UINT32:
 			{
-				lua_Integer num = 0;
-				if(lua_isnumber(L, index))
-				{
-					num = (lua_Integer)lua_tonumber(L, index);
-				}
-				else 
-				{
-					num = lua_tointeger(L, index);
-				}
-				//std::cout << num << std::endl;
-				return num;
+				return toInteger(L, index);
 			}
 			break;
 			case schema::Type::UINT64:
 			{
-				lua_Integer num = 0;
-				if(lua_isnumber(L, index))
-				{
-					num = (lua_Integer)lua_tonumber(L, index);
-				}
-				else 
-				{
-					num = lua_tointeger(L, index);
-				}
-				return (uint64_t)num;
+				return (uint64_t)toInteger(L, index);
 			}
 			break;
 			case schema::Type::FLOAT32:
