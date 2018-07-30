@@ -51,6 +51,7 @@ inline int LuaTryCatch(lua_State *L, Func&& func)
 {
 	int ret = 0;
 	bool jump = false;
+	lua_gc(L, LUA_GCSTOP, 0);
 	//make sure cb is destructed before longjmp
 	//TODO for now, func() must not raise any lua error
 	{
@@ -64,6 +65,7 @@ inline int LuaTryCatch(lua_State *L, Func&& func)
 			jump = true;
 		}
 	}
+	lua_gc(L, LUA_GCRESTART, 0);
 	if (jump)
 	{
 		return lua_error(L);
