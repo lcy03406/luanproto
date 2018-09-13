@@ -311,29 +311,6 @@ namespace luacapnp
 		return kj::mv(orphan);
 	}
 
-	lua_Integer toInteger(lua_State *L, int index)
-	{
-		lua_Integer num = 0;
-		if(lua_isinteger(L, index))
-		{
-			num = lua_tointeger(L, index);
-		}
-		else if(lua_isnumber(L, index))
-		{
-			num = lua_tonumber(L, index);
-		}
-		else 
-		{
-			std::cerr << "unknown type" << std::endl;
-		}
-		//std::cout << num << std::endl;
-		return num;
-
-	
-	}
-
-
-
 	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, Orphanage& orphanage, const Type& type, const StructSchema::Field* field)
 	{
 		//std::cout << "type:" << type.which() << std::endl;
@@ -356,15 +333,17 @@ namespace luacapnp
 			case schema::Type::UINT16:
 			case schema::Type::UINT32:
 			{
-				return toInteger(L, index);
+				return (int)lua_tonumber(L, index);
 			}
 			break;
 			case schema::Type::INT64:
 			{
+				// TODO:这里可能会丢失精度
 				return (int64_t)lua_tonumber(L, index);
 			}
 			case schema::Type::UINT64:
 			{
+				// TODO:这里可能会丢失精度
 				return (uint64_t)lua_tonumber(L, index);
 			}
 			break;
@@ -459,6 +438,7 @@ namespace luacapnp
 				auto ft = field ? field->getType().which() : 0;
 				auto tmp = value.as<int64_t>();
 				if(ft == schema::Type::INT64) {
+					// TODO:这里可能会丢失精度
 					lua_pushnumber(L, tmp);
 				}
 				else {
@@ -471,6 +451,7 @@ namespace luacapnp
 				auto ft = field ? field->getType().which() : 0;
 				auto tmp = value.as<uint64_t>();
 				if(ft == schema::Type::UINT64) {
+					// TODO:这里可能会丢失精度
 					lua_pushnumber(L, tmp);
 				}
 				else {
