@@ -352,7 +352,6 @@ namespace luacapnp
 			case schema::Type::INT8:
 			case schema::Type::INT16:
 			case schema::Type::INT32:
-			case schema::Type::INT64:
 			case schema::Type::UINT8:
 			case schema::Type::UINT16:
 			case schema::Type::UINT32:
@@ -360,9 +359,13 @@ namespace luacapnp
 				return toInteger(L, index);
 			}
 			break;
+			case schema::Type::INT64:
+			{
+				return (int64_t)lua_tonumber(L, index);
+			}
 			case schema::Type::UINT64:
 			{
-				return (uint64_t)toInteger(L, index);
+				return (uint64_t)lua_tonumber(L, index);
 			}
 			break;
 			case schema::Type::FLOAT32:
@@ -453,13 +456,26 @@ namespace luacapnp
 			} break;
 			case DynamicValue::INT:
 			{
-				lua_pushinteger(L, value.as<int64_t>());
+				auto ft = field ? field->getType().which() : 0;
+				auto tmp = value.as<int64_t>();
+				if(ft == schema::Type::INT64) {
+					lua_pushnumber(L, tmp);
+				}
+				else {
+					lua_pushinteger(L, tmp);
+				}
 				return 1;
 			} break;
 			case DynamicValue::UINT:
 			{
-				//TODO handle big values
-				lua_pushinteger(L, value.as<uint64_t>());
+				auto ft = field ? field->getType().which() : 0;
+				auto tmp = value.as<uint64_t>();
+				if(ft == schema::Type::UINT64) {
+					lua_pushnumber(L, tmp);
+				}
+				else {
+					lua_pushinteger(L, tmp);
+				}
 				return 1;
 			} break;
 			case DynamicValue::FLOAT:
