@@ -1,4 +1,5 @@
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <iostream>
 #include <set>
@@ -77,13 +78,21 @@ using namespace capnp;
 
 namespace luacapnp
 {
+	capnp::Orphan<capnp::DynamicValue> convertToValue(lua_State *L, int index, capnp::MessageBuilder& message, Orphanage& orphanage, const capnp::Type& type, const capnp::StructSchema::Field* field);
+	capnp::Orphan<capnp::DynamicValue> convertToList(lua_State *L, int index, capnp::MessageBuilder& message, Orphanage& orphanage, const capnp::ListSchema& listSchema, const capnp::StructSchema::Field* field);
+	capnp::Orphan<capnp::DynamicValue> convertToStruct(lua_State *L, int index, capnp::MessageBuilder& message, Orphanage& orphanage, const capnp::StructSchema& structSchema);
+
+	int convertFromValue(lua_State *L, capnp::DynamicValue::Reader value, const capnp::StructSchema::Field* field);
+	int convertFromList(lua_State *L, capnp::DynamicList::Reader value, const capnp::StructSchema::Field* field);
+	int convertFromStruct(lua_State *L, capnp::DynamicStruct::Reader value);
 #ifdef LUACAPNP_PARSER
 	capnp::SchemaParser parser;
 #endif //LUACAPNP_PARSER
 	SchemaLoader loader;
 
-	std::map<std::string, InterfaceSchema> interfaceSchemaRegistry;
-	std::map<std::string, StructSchema> structSchemaRegistry;
+	std::set<kj::String> names;
+	std::map<kj::StringPtr, InterfaceSchema> interfaceSchemaRegistry;
+	std::map<kj::StringPtr, StructSchema> structSchemaRegistry;
 
 	kj::Maybe<std::pair<kj::StringPtr, kj::StringPtr>> isMap(const StructSchema::Field* field)
 	{
@@ -112,7 +121,7 @@ namespace luacapnp
 		return ret;
 	}
 
-	Orphan<DynamicValue> convertArrayToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema)
+	Orphan<DynamicValue> convertArrayToList(lua_State *L, int index, MessageBuilder& message, Orphanage& orphanage, const ListSchema& listSchema)
 	{
 		if (!lua_istable(L, index))
 			return nullptr;
@@ -121,7 +130,7 @@ namespace luacapnp
 		//	return nullptr;
 		if (index < 0)
 			index--;
-		auto orphan = message.getOrphanage().newOrphan(listSchema, (capnp::uint)size);
+		auto orphan = orphanage.newOrphan(listSchema, (capnp::uint)size);
 		auto list = orphan.get();
 		auto elementType = listSchema.getElementType();
 		for (size_t i = 1; i <= size; ++i)
@@ -129,7 +138,7 @@ namespace luacapnp
 			lua_pushinteger(L, i);
 			lua_gettable(L, index);
 			//TODO(optimize): avoid copy structs
-			auto value = convertToValue(L, -1, message, elementType, nullptr);
+			auto value = convertToValue(L, -1, message, orphanage, elementType, nullptr);
 			if (value.getType() != DynamicValue::UNKNOWN)
 			{
 				list.adopt((capnp::uint)i - 1, kj::mv(value));
@@ -179,7 +188,7 @@ namespace luacapnp
 		}
 	};
 
-	Orphan<DynamicValue> convertMapToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema, const kj::StringPtr& keyName, const kj::StringPtr& valueName)
+	Orphan<DynamicValue> convertMapToList(lua_State *L, int index, MessageBuilder& message, Orphanage& orphanage, const ListSchema& listSchema, const kj::StringPtr& keyName, const kj::StringPtr& valueName)
 	{
 		if (!lua_istable(L, index))
 			return nullptr;
@@ -228,23 +237,23 @@ namespace luacapnp
 			KJ_IF_MAYBE(keyField, keyFieldMaybe) {
 				KJ_IF_MAYBE(valueField, valueFieldMaybe) {
 					auto value = list[i].as<DynamicStruct>();
-					auto keyValue = convertToValue(L, -2, message, keyField->getType(), keyField);
+					auto keyValue = convertToValue(L, -2, message, orphanage, keyField->getType(), keyField);
 					if (keyValue.getType() != DynamicValue::UNKNOWN) {
 						value.adopt(*keyField, kj::mv(keyValue));
 					}
-					auto valueValue = convertToValue(L, -1, message, valueField->getType(), valueField);
+					auto valueValue = convertToValue(L, -1, message, orphanage, valueField->getType(), valueField);
 					if (valueValue.getType() != DynamicValue::UNKNOWN) {
 						value.adopt(*valueField, kj::mv(valueValue));
 					}
 				} else {
 					//TODO(optimize): avoid copy structs
-					auto value = convertToValue(L, -1, message, elementType, nullptr);
+					auto value = convertToValue(L, -1, message, orphanage, elementType, nullptr);
 					if (value.getType() != DynamicValue::UNKNOWN) {
 						list.adopt(i, kj::mv(value));
 					}
 				}
 			} else {
-				auto value = convertToValue(L, -2, message, elementType, nullptr);
+				auto value = convertToValue(L, -2, message, orphanage, elementType, nullptr);
 				if (value.getType() != DynamicValue::UNKNOWN) {
 					list.adopt(i, kj::mv(value));
 				}
@@ -255,20 +264,20 @@ namespace luacapnp
 		return kj::mv(orphan);
 	}
 
-	Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilder& message, const ListSchema& listSchema, const StructSchema::Field* field)
+	Orphan<DynamicValue> convertToList(lua_State *L, int index, MessageBuilder& message, Orphanage& orphanage, const ListSchema& listSchema, const StructSchema::Field* field)
 	{
 		KJ_IF_MAYBE(map, isMap(field))
 		{
-			return convertMapToList(L, index, message, listSchema, map->first, map->second);
+			return convertMapToList(L, index, message, orphanage, listSchema, map->first, map->second);
 		}
 		else
 		{
-			return convertArrayToList(L, index, message, listSchema);
+			return convertArrayToList(L, index, message, orphanage, listSchema);
 		}
 	}
 
 
-	Orphan<DynamicValue> convertToStruct(lua_State *L, int index, MessageBuilder& message, const StructSchema& structSchema)
+	Orphan<DynamicValue> convertToStruct(lua_State *L, int index, MessageBuilder& message, Orphanage& orphanage, const StructSchema& structSchema)
 	{
 		if (!lua_istable(L, index))
 			return nullptr;
@@ -286,7 +295,7 @@ namespace luacapnp
 				{
 					auto fieldType = field->getType();
 					//TODO(optimize): avoid coping group fields.
-					auto value = convertToValue(L, -1, message, fieldType, field);
+					auto value = convertToValue(L, -1, message, orphanage, fieldType, field);
 					if (value.getType() != DynamicValue::UNKNOWN)
 					{
 						obj.adopt(*field, kj::mv(value));
@@ -325,7 +334,7 @@ namespace luacapnp
 
 
 
-	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, const Type& type, const StructSchema::Field* field)
+	Orphan<DynamicValue> convertToValue(lua_State *L, int index, MessageBuilder& message, Orphanage& orphanage, const Type& type, const StructSchema::Field* field)
 	{
 		//std::cout << "type:" << type.which() << std::endl;
 		switch (type.which())
@@ -383,7 +392,7 @@ namespace luacapnp
 			case schema::Type::LIST:
 			{
 				auto listSchema = type.asList();
-				return convertToList(L, index, message, listSchema, field);
+				return convertToList(L, index, message, orphanage, listSchema, field);
 			}
 			break;
 			case schema::Type::ENUM:
@@ -410,7 +419,7 @@ namespace luacapnp
 			case schema::Type::STRUCT:
 			{
 				auto structSchema = type.asStruct();
-				return convertToStruct(L, index, message, structSchema);
+				return convertToStruct(L, index, message, orphanage, structSchema);
 			}
 			break;
 			case schema::Type::INTERFACE:
@@ -644,12 +653,14 @@ namespace luacapnp
 
 	void initInterfaceSchema(const char* name, InterfaceSchema schema)
 	{
-		interfaceSchemaRegistry[name] = schema;
+		auto it = names.emplace(kj::str(name)).first;
+		interfaceSchemaRegistry[*it] = schema;
 	}
 	
 	void initStructSchema(const char* name, StructSchema schema)
 	{
-		structSchemaRegistry[name] = schema;
+		auto it = names.emplace(kj::str(name)).first;
+		structSchemaRegistry[*it] = schema;
 	}
 
 	kj::Maybe<capnp::InterfaceSchema::Method> findMethod(const char* interface, const char* method)
@@ -760,7 +771,8 @@ static int lencode (lua_State *L) {
 		auto schema = findSchema(L, 1, &index);
 		//TODO(optimize): use luaL_Buffer to avoid copy?
 		MallocMessageBuilder message;
-		message.adoptRoot(convertToStruct(L, 4, message, schema));
+		auto orphanage = message.getOrphanage();
+		message.adoptRoot(convertToStruct(L, 4, message, orphanage, schema));
 		auto words = messageToFlatArray(message);
 		auto array = words.asBytes();
 		lua_pushinteger(L, index);
@@ -806,7 +818,8 @@ static int lserialize(lua_State *L) {
 		auto schema = findStructSchema(L, 1);
 		//TODO(optimize): use luaL_Buffer to avoid copy?
 		MallocMessageBuilder message;
-		message.adoptRoot(convertToStruct(L, 2, message, schema));
+		auto orphanage = message.getOrphanage();
+		message.adoptRoot(convertToStruct(L, 2, message, orphanage, schema));
 		auto words = messageToFlatArray(message);
 		auto array = words.asBytes();
 		lua_pushlstring(L, (const char*)array.begin(), array.size());
