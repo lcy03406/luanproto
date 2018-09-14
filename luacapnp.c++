@@ -46,6 +46,7 @@
 #define LIBLUACAPNP_API 
 #endif
 
+#define LUA_INT_IS_TOO_SMALL sizeof(lua_Integer)<sizeof(int64_t)
 
 template<typename Func>
 inline int LuaTryCatch(lua_State *L, Func&& func)
@@ -329,22 +330,53 @@ namespace luacapnp
 			case schema::Type::INT8:
 			case schema::Type::INT16:
 			case schema::Type::INT32:
+			{
+				return lua_tointeger(L, index);
+			}
+			break;
 			case schema::Type::UINT8:
 			case schema::Type::UINT16:
+			{
+				return (uint32_t)lua_tointeger(L, index);
+			}
+			break;
 			case schema::Type::UINT32:
 			{
-				return (int)lua_tonumber(L, index);
+				if (LUA_INT_IS_TOO_SMALL)
+				{
+					// TODO: precision
+					return (uint32_t)(int64_t)lua_tonumber(L, index);
+				}
+				else
+				{
+					return (uint32_t)lua_tointeger(L, index);
+				}
 			}
 			break;
 			case schema::Type::INT64:
 			{
-				// TODO:这里可能会丢失精度
-				return (int64_t)lua_tonumber(L, index);
+				if (LUA_INT_IS_TOO_SMALL)
+				{
+					// TODO: precision
+					return (int64_t)lua_tonumber(L, index);
+				}
+				else
+				{
+					return lua_tointeger(L, index);
+				}
 			}
+			break;
 			case schema::Type::UINT64:
 			{
-				// TODO:这里可能会丢失精度
-				return (uint64_t)lua_tonumber(L, index);
+				if (LUA_INT_IS_TOO_SMALL)
+				{
+					// TODO: precision
+					return (uint64_t)(int64_t)lua_tonumber(L, index);
+				}
+				else
+				{
+					return (uint64_t)lua_tointeger(L, index);
+				}
 			}
 			break;
 			case schema::Type::FLOAT32:
@@ -437,12 +469,13 @@ namespace luacapnp
 			{
 				auto ft = field ? field->getType().which() : 0;
 				auto tmp = value.as<int64_t>();
-				if(ft == schema::Type::INT64) {
-					// TODO:这里可能会丢失精度
-					lua_pushnumber(L, tmp);
+				if(LUA_INT_IS_TOO_SMALL && ft == schema::Type::INT64) {
+					// TODO: precision
+					lua_pushnumber(L, (lua_Number)tmp);
 				}
-				else {
-					lua_pushinteger(L, tmp);
+				else
+				{
+					lua_pushinteger(L, (lua_Integer)tmp);
 				}
 				return 1;
 			} break;
@@ -450,12 +483,14 @@ namespace luacapnp
 			{
 				auto ft = field ? field->getType().which() : 0;
 				auto tmp = value.as<uint64_t>();
-				if(ft == schema::Type::UINT64) {
-					// TODO:这里可能会丢失精度
-					lua_pushnumber(L, tmp);
+				if(LUA_INT_IS_TOO_SMALL && ft == schema::Type::UINT64) {
+					// TODO: precision
+					lua_pushnumber(L, (lua_Number)tmp);
 				}
-				else {
-					lua_pushinteger(L, tmp);
+				else
+				{
+					// convert to signed
+					lua_pushinteger(L, (lua_Integer)tmp);
 				}
 				return 1;
 			} break;
