@@ -1,5 +1,5 @@
-CXXFLAGS = -std=c++1z -g -ggdb -O0 -Wall -fPIC -DPIC -I../../../dep/build/include -DLUACAPNP_PARSER
-LDFLAGS = -shared -L../../../lib -lcapnp-rpc -lcapnpc -lcapnp -lkj
+CXXFLAGS = $(SKYWORK_CXXFLAGS) -I../../../dep/build/include -DLUACAPNP_PARSER
+LDFLAGS = $(SKYWORK_LDFLAGS) -shared -L../../../lib -lcapnp-rpc -lcapnpc -lcapnp -lkj
 
 all : luacapnp.so
 	
