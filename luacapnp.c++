@@ -48,6 +48,8 @@
 
 #define LUA_INT_IS_TOO_SMALL sizeof(lua_Integer)<sizeof(int64_t)
 
+#define LuaTryCatch LuaCapnpTryCatch
+
 template<typename Func>
 inline int LuaTryCatch(lua_State *L, Func&& func)
 {
@@ -633,6 +635,7 @@ namespace luacapnp
 		return 1;
 	}
 
+	/*
 	static kj::StringPtr ShortName(const kj::StringPtr& name)
 	{
 		KJ_IF_MAYBE(col, name.findLast(':'))
@@ -644,6 +647,7 @@ namespace luacapnp
 			return name;
 		}
 	}
+	*/
 
 	void initFromFile(const char* filename)
 	{
